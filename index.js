@@ -8,18 +8,12 @@ const port = process.env.PORT || 4000;
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 
 app.get('/v-get', async (req, res) => {
-  const videoUrl = req.query.url;
+  const videoId = req.query.id;
 
-  if (!videoUrl) {
-    return res.status(400).json({ error: 'URL parameter is required' });
+  if (!videoId) {
+    return res.status(400).json({ error: 'id parameter is required' });
   }
 
-  const videoIdMatch = videoUrl.match(/v=([a-zA-Z0-9_-]+)/);
-  if (!videoIdMatch) {
-    return res.status(400).json({ error: 'Invalid YouTube URL' });
-  }
-
-  const videoId = videoIdMatch[1];
   const youtubeApiUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics,liveStreamingDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`;
 
   try {
