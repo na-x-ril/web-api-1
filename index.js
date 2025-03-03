@@ -45,14 +45,36 @@ const fromNow = (dateString, isLive) => {
   return `${prefix}${result}${suffix}`;
 };
 
-app.get('/v-get', async (req, res) => {
+// YouTube endpoint
+app.get('/yt/v-get', async (req, res) => {
   const videoId = req.query.id;
+  const parts = req.query.parts ? req.query.parts.split(',') : [];
 
   if (!videoId) {
     return res.status(400).json({ error: 'id parameter is required' });
   }
 
-  const youtubeApiUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics,liveStreamingDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`;
+  if (parts.length === 0) {
+    return res.status(400).json({ error: 'parts parameter is required' });
+  }
+
+  // Filter hanya parts yang valid
+  const validParts = [
+    'snippet',
+    'contentDetails',
+    'statistics',
+    'status',
+    'liveStreamingDetails',
+    'player',
+    'topicDetails',
+  ];
+
+  const filteredParts = parts.filter(part => validParts.includes(part));
+  if (filteredParts.length === 0) {
+    return res.status(400).json({ error: 'Invalid parts parameter' });
+  }
+
+  const youtubeApiUrl = `https://www.googleapis.com/youtube/v3/videos?part=${filteredParts.join(',')}&id=${videoId}&key=${YOUTUBE_API_KEY}`;
   const dislikeApiUrl = `https://returnyoutubedislikeapi.com/votes?videoId=${videoId}`;
 
   try {
@@ -64,22 +86,29 @@ app.get('/v-get', async (req, res) => {
     const videoData = youtubeResponse.data;
     const dislikeData = dislikeResponse.data;
 
-    if (videoData.items && videoData.items.length > 0) {
+    if (videoData.items?.length > 0) {
       const videoItem = videoData.items[0];
-      const statistics = videoItem.statistics;
+      const statistics = videoItem.statistics || {};
+
+      // Tambahkan dislike dan rating
       statistics.dislikeCount = dislikeData.dislikes;
       statistics.rating = dislikeData.rating;
-      
-      const isLive = videoItem.snippet.liveBroadcastContent === 'live';
-      const formattedDate = fromNow(isLive ? videoItem.liveStreamingDetails?.actualStartTime : videoItem.snippet.publishedAt, isLive);
-      
+
+      // Format tanggal
+      const isLive = videoItem.snippet?.liveBroadcastContent === 'live';
+      const formattedDate = fromNow(
+        isLive ? videoItem.liveStreamingDetails?.actualStartTime : videoItem.snippet?.publishedAt,
+        isLive
+      );
+
       if (isLive && videoItem.liveStreamingDetails) {
         videoItem.liveStreamingDetails.formattedDate = formattedDate;
-      } else {
+      } else if (videoItem.snippet) {
         videoItem.snippet.formattedDate = formattedDate;
       }
 
-      const orderedStatistics = {
+      // Susun ulang statistics
+      videoItem.statistics = {
         viewCount: statistics.viewCount,
         likeCount: statistics.likeCount,
         dislikeCount: statistics.dislikeCount,
@@ -87,10 +116,26 @@ app.get('/v-get', async (req, res) => {
         favoriteCount: statistics.favoriteCount,
         commentCount: statistics.commentCount
       };
-      videoItem.statistics = orderedStatistics;
     }
 
     res.json(videoData);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// TikTok endpoint
+app.get('/tt/v-get', async (req, res) => {
+  const { url } = req.query;
+
+  if (!url) {
+    return res.status(400).json({ error: 'Video URL is required' });
+  }
+
+  try {
+    const tiktokApiUrl = `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`;
+    const response = await axios.get(tiktokApiUrl);
+    res.json(response.data);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
