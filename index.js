@@ -48,17 +48,12 @@ const fromNow = (dateString, isLive) => {
 // YouTube endpoint
 app.get('/yt/v-get', async (req, res) => {
   const videoId = req.query.id;
-  const parts = req.query.parts ? req.query.parts.split(',') : [];
+  let parts = req.query.parts ? req.query.parts.split(',') : [];
 
   if (!videoId) {
     return res.status(400).json({ error: 'id parameter is required' });
   }
 
-  if (parts.length === 0) {
-    return res.status(400).json({ error: 'parts parameter is required' });
-  }
-
-  // Filter hanya parts yang valid
   const validParts = [
     'snippet',
     'contentDetails',
@@ -69,12 +64,18 @@ app.get('/yt/v-get', async (req, res) => {
     'topicDetails',
   ];
 
-  const filteredParts = parts.filter(part => validParts.includes(part));
-  if (filteredParts.length === 0) {
-    return res.status(400).json({ error: 'Invalid parts parameter' });
+  // Jika parts = all, gunakan semua part
+  if (parts.includes('all')) {
+    parts = validParts;
+  } else {
+    parts = parts.filter(part => validParts.includes(part));
   }
 
-  const youtubeApiUrl = `https://www.googleapis.com/youtube/v3/videos?part=${filteredParts.join(',')}&id=${videoId}&key=${YOUTUBE_API_KEY}`;
+  if (parts.length === 0) {
+    return res.status(400).json({ error: 'Valid parts or "all" parameter is required' });
+  }
+
+  const youtubeApiUrl = `https://www.googleapis.com/youtube/v3/videos?part=${parts.join(',')}&id=${videoId}&key=${YOUTUBE_API_KEY}`;
   const dislikeApiUrl = `https://returnyoutubedislikeapi.com/votes?videoId=${videoId}`;
 
   try {
