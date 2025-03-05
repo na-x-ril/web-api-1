@@ -1,12 +1,14 @@
 require('dotenv').config();
 
 const express = require('express');
+const cors = require('cors');
 const axios = require('axios');
 const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 4000;
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+app.use(cors());
 app.set('json spaces', 2);
 
 const fromNow = (dateString, isLive) => {
