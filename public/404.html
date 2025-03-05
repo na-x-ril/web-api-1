@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>404 | Page Not Found</title>
+  <style>
+    body {
+      background-color: oklch(0.13 0.028 261.692);
+      color: white;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      text-align: center;
+      overflow: hidden;
+    }
+    h1 {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+    p {
+      font-size: 1.2rem;
+    }
+    .guide {
+      margin-top: 2rem;
+      padding: 1.5rem;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      width: 80%;
+      max-width: 600px;
+    }
+    code {
+      background: rgba(0, 0, 0, 0.5);
+      padding: 0.2rem 0.5rem;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>404 | Page Not Found</h1>
+  <p>The route you are looking for doesn't exist.</p>
+
+  <div class="guide">
+    <h2>API Usage Guide:</h2>
+    <p><strong>YouTube:</strong></p>
+    <p>Get video data: <code>/yt/v-get?id={videoId}&parts=snippet,statistics</code></p>
+
+    <p><strong>TikTok:</strong></p>
+    <p>Download video: <code>/tt/v-get?url={videoUrl}</code></p>
+
+    <p>Example:</p>
+    <ul style="list-style: none; padding: 0;">
+      <li>YouTube: <code>/yt/v-get?id=abc123&parts=snippet,statistics</code></li>
+      <li>TikTok: <code>/tt/v-get?url=https://www.tiktok.com/@user/video/123456</code></li>
+    </ul>
+  </div>
+</body>
+</html>

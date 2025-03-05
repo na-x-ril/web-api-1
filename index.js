@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const express = require('express');
 const axios = require('axios');
+const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -140,6 +141,17 @@ app.get('/tt/v-get', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// 404 Not Found
+app.use((req, res) => {
+  res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
+});
+
+// 500 Internal Server Error
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).sendFile(path.join(__dirname, 'public', '500.html'));
 });
 
 app.listen(port, () => {
