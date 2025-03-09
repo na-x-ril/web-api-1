@@ -145,6 +145,44 @@ app.get('/tt/v-get', async (req, res) => {
   }
 });
 
+// Endpoint download video TikTok
+app.get('/tt/v-download', async (req, res) => {
+  const { url, quality } = req.query;
+
+  if (!url) {
+    return res.status(400).json({ error: 'Video URL is required' });
+  }
+
+  try {
+    const tiktokApiUrl = `https://tikwm.com/api/?url=${encodeURIComponent(url)}&hd=1`;
+    const response = await axios.get(tiktokApiUrl);
+    const data = response.data;
+
+    if (!data.data) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    const username = data.data.author?.unique_id || 'unknown';
+    const videoID = data.data.id || 'unknown';
+    const filename = `TikTok_${username}_${videoID}.mp4`;
+
+    const videoUrl = quality === 'hd' ? data.data.hdplay : data.data.play;
+
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'video/mp4');
+
+    const videoStream = await axios({
+      url: videoUrl,
+      method: 'GET',
+      responseType: 'stream'
+    });
+
+    videoStream.data.pipe(res);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 404 Not Found
 app.use((req, res) => {
   res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
