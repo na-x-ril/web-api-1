@@ -137,7 +137,7 @@ app.get('/tt/v-get', async (req, res) => {
   }
 
   try {
-    const tiktokApiUrl = `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`;
+    const tiktokApiUrl = `https://tikwm.com/api/?url=${encodeURIComponent(url)}&hd=1`;
     const response = await axios.get(tiktokApiUrl);
     res.json(response.data);
   } catch (error) {
