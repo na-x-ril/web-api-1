@@ -46,16 +46,21 @@
 
   <div class="guide">
     <h2>API Usage Guide:</h2>
+
     <p><strong>YouTube:</strong></p>
     <p>Get video data: <code>/yt/v-get?id={videoId}&parts=snippet,statistics</code></p>
 
     <p><strong>TikTok:</strong></p>
-    <p>Download video: <code>/tt/v-get?url={videoUrl}</code></p>
+    <p>Get video info: <code>/tt/v-get?url={videoUrl}</code></p>
+    <p>Download video (no watermark): <code>/tt/v-download?url={videoUrl}</code></p>
+    <p>Download video (HD): <code>/tt/v-download?url={videoUrl}&quality=hd</code></p>
 
     <p>Example:</p>
     <ul style="list-style: none; padding: 0;">
       <li>YouTube: <code>/yt/v-get?id=abc123&parts=snippet,statistics</code></li>
-      <li>TikTok: <code>/tt/v-get?url=https://www.tiktok.com/@user/video/123456</code></li>
+      <li>TikTok (Info): <code>/tt/v-get?url=https://www.tiktok.com/@user/video/123456</code></li>
+      <li>TikTok (Download): <code>/tt/v-download?url=https://www.tiktok.com/@user/video/123456</code></li>
+      <li>TikTok (Download HD): <code>/tt/v-download?url=https://www.tiktok.com/@user/video/123456&quality=hd</code></li>
     </ul>
   </div>
 </body>
