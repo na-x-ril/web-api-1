@@ -28,11 +28,6 @@ const fromNow = (dateString, isLive) => {
     { singular: "sec", plural: "secs", value: 1 },
   ];
 
-  const formatTime = (timestamp) => {
-    const date = new Date(timestamp * 1000);
-    return date.toLocaleString();
-  };
-
   const minuteThreshold = isLive ? 119 : 59;
 
   if (diffInSeconds < minuteThreshold * 60) {
