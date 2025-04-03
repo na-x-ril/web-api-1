@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const cheerio = require('cheerio');
 const path = require('path');
 
 const app = express();
@@ -26,6 +27,11 @@ const fromNow = (dateString, isLive) => {
     { singular: "min", plural: "mins", value: 60 },
     { singular: "sec", plural: "secs", value: 1 },
   ];
+
+  const formatTime = (timestamp) => {
+    const date = new Date(timestamp * 1000);
+    return date.toLocaleString();
+  };
 
   const minuteThreshold = isLive ? 119 : 59;
 
@@ -142,6 +148,63 @@ app.get('/tt/v-get', async (req, res) => {
     res.json(response.data);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/tt/user-get', async (req, res) => {
+  const { username } = req.query;
+
+  if (!username) {
+    return res.status(400).json({ error: 'Username is required' });
+  }
+
+  const startTime = Date.now();
+
+  try {
+    function formatTimestamp(timestamp) {
+      const date = new Date(timestamp * 1000);
+      return date.toLocaleString("id-ID", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+    }
+    
+    const url = `https://www.tiktok.com/@${username}`;
+    const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    };
+
+    const response = await axios.get(url, { headers });
+    const html = response.data;
+
+    const $ = cheerio.load(html);
+    const scriptElement = $('#__UNIVERSAL_DATA_FOR_REHYDRATION__');
+
+    if (scriptElement.length === 0) {
+        return res.status(404).json({ error: 'User data not found or script element missing' });
+    }
+
+    const jsonData = JSON.parse(scriptElement.html());
+
+    const userData = jsonData?.__DEFAULT_SCOPE__?.['webapp.user-detail']?.userInfo || {};
+        
+    if (!userData.user) {
+        return res.status(404).json({ error: 'User not found' });
+    } else {
+      userData.user.createTime = formatTimestamp(userData.user.createTime);
+      userData.user.nickNameModifyTime = formatTimestamp(userData.user.nickNameModifyTime);
+    }
+
+    const processTime = Date.now() - startTime;
+
+    res.json({ processTime, ...userData });
+  } catch (error) {
+    res.status(500).json({error: error.message});
   }
 });
 
