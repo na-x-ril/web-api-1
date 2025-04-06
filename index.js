@@ -260,8 +260,8 @@ app.get('/tt/user-get', async (req, res) => {
       ...userData,
       user: {
         ...userData.user,
-        createTime: formatTimestamp(userData.user.createTime),
-        nickNameModifyTime: formatTimestamp(userData.user.nickNameModifyTime),
+        createTime: formatTime(userData.user.createTime),
+        nickNameModifyTime: formatTime(userData.user.nickNameModifyTime),
         formattedStats: {
           followerCount: formatNumber(userData.stats.followerCount),
           heartCount: formatNumber(userData.stats.heartCount),
