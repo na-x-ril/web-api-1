@@ -5,6 +5,7 @@ const cors = require('cors');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const path = require('path');
+const countries = require('./countries');
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -47,6 +48,57 @@ const fromNow = (dateString, isLive) => {
   const suffix = diffInSeconds >= 0 ? " ago" : " later";
 
   return `${prefix}${result}${suffix}`;
+};
+
+// Helper functions for TikTok formatting
+const formatDuration = (seconds) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs < 10 ? '0' + secs : secs}`;
+};
+
+const formatBytes = (bytes) => (bytes / (1024 * 1024)).toFixed(2);
+
+const formatNumber = (num) => {
+  num = parseInt(num, 10);
+  const formattedNum = num.toLocaleString('id-ID');
+  const units = [
+    { value: 1e12, suffix: 'T' },
+    { value: 1e9, suffix: 'M' },
+    { value: 1e6, suffix: 'jt' },
+    { value: 1e3, suffix: 'rb' },
+  ];
+
+  let displayNum = formattedNum;
+  for (const { value, suffix } of units) {
+    if (num >= value) {
+      let count = Math.floor((num / value) * 10) / 10;
+      count = count.toString().replace('.', ',');
+      displayNum += ` (${count.replace(/,0$/, '')}${suffix})`;
+      break;
+    }
+  }
+  return displayNum;
+};
+
+const formatTime = (timestamp) => {
+  const date = new Date(timestamp * 1000);
+  return date.toLocaleString('id-ID', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+};
+
+const formatRegion = (countryCode, countries) => {
+  if (!countryCode) return 'Tidak diketahui';
+  const country = countries.find(c => c.id === countryCode.toUpperCase());
+  if (!country) return countryCode;
+  return `${country.name} ${country.flag} (${country.continent})`;
 };
 
 // YouTube endpoint
@@ -129,7 +181,7 @@ app.get('/yt/v-get', async (req, res) => {
   }
 });
 
-// TikTok endpoint
+// TikTok endpoint with formatting
 app.get('/tt/v-get', async (req, res) => {
   const { url } = req.query;
 
@@ -140,7 +192,32 @@ app.get('/tt/v-get', async (req, res) => {
   try {
     const tiktokApiUrl = `https://tikwm.com/api/?url=${encodeURIComponent(url)}&hd=1`;
     const response = await axios.get(tiktokApiUrl);
-    res.json(response.data);
+    const data = response.data;
+
+    if (!data.data) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    // Format the response data
+    const formattedData = {
+      ...data,
+      data: {
+        ...data.data,
+        formatted: {
+          duration: formatDuration(data.data.duration),
+          size: formatBytes(data.data.size),
+          hd_size: formatBytes(data.data.hd_size),
+          play_count: formatNumber(data.data.play_count),
+          digg_count: formatNumber(data.data.digg_count),
+          comment_count: formatNumber(data.data.comment_count),
+          collect_count: formatNumber(data.data.collect_count),
+          create_time: formatTime(data.data.create_time),
+          region: formatRegion(data.data.region, countries)
+        }
+      }
+    };
+
+    res.json(formattedData);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -156,22 +233,9 @@ app.get('/tt/user-get', async (req, res) => {
   const startTime = Date.now();
 
   try {
-    function formatTimestamp(timestamp) {
-      const date = new Date(timestamp * 1000);
-      return date.toLocaleString("id-ID", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit"
-      });
-    }
-    
     const url = `https://www.tiktok.com/@${username}`;
     const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     };
 
     const response = await axios.get(url, { headers });
@@ -181,25 +245,37 @@ app.get('/tt/user-get', async (req, res) => {
     const scriptElement = $('#__UNIVERSAL_DATA_FOR_REHYDRATION__');
 
     if (scriptElement.length === 0) {
-        return res.status(404).json({ error: 'User data not found or script element missing' });
+      return res.status(404).json({ error: 'User data not found or script element missing' });
     }
 
     const jsonData = JSON.parse(scriptElement.html());
-
     const userData = jsonData?.__DEFAULT_SCOPE__?.['webapp.user-detail']?.userInfo || {};
-        
+
     if (!userData.user) {
-        return res.status(404).json({ error: 'User not found' });
-    } else {
-      userData.user.createTime = formatTimestamp(userData.user.createTime);
-      userData.user.nickNameModifyTime = formatTimestamp(userData.user.nickNameModifyTime);
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    const processTime = Date.now() - startTime;
+    // Format the data
+    const formattedData = {
+      ...userData,
+      user: {
+        ...userData.user,
+        createTime: formatTimestamp(userData.user.createTime),
+        nickNameModifyTime: formatTimestamp(userData.user.nickNameModifyTime),
+        formattedStats: {
+          followerCount: formatNumber(userData.stats.followerCount),
+          heartCount: formatNumber(userData.stats.heartCount),
+          videoCount: formatNumber(userData.stats.videoCount),
+          followingCount: formatNumber(userData.stats.followingCount)
+        },
+        formattedRegion: formatRegion(userData.user.region, countries)
+      },
+      processTime: Date.now() - startTime
+    };
 
-    res.json({ processTime, ...userData });
+    res.json({ msg: "success", ...formattedData });
   } catch (error) {
-    res.status(500).json({error: error.message});
+    res.status(500).json({ msg: "error", error: error.message });
   }
 });
 
