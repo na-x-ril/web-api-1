@@ -95,10 +95,28 @@ const formatTime = (timestamp) => {
 };
 
 const formatRegion = (countryCode, countries) => {
-  if (!countryCode) return 'Tidak diketahui';
+  if (!countryCode) return {
+    name: 'Tidak diketahui',
+    flag: '',
+    continent: '',
+    phoneCode: ''
+  };
+  
   const country = countries.find(c => c.id === countryCode.toUpperCase());
-  if (!country) return countryCode;
-  return `${country.name} ${country.flag} (${country.continent})`;
+  if (!country) return {
+    name: countryCode,
+    flag: '',
+    continent: '',
+    phoneCode: ''
+  };
+  
+  return {
+    name: country.name,
+    flag: country.flag,
+    continent: country.continent,
+    phoneCode: country.phoneCode,
+    currencyId: country.currencyId
+  };
 };
 
 // YouTube endpoint
@@ -268,7 +286,8 @@ app.get('/tt/user-get', async (req, res) => {
           videoCount: formatNumber(userData.stats.videoCount),
           followingCount: formatNumber(userData.stats.followingCount)
         },
-        formattedRegion: formatRegion(userData.user.region, countries)
+        formattedRegion: formatRegion(userData.user.region, countries),
+        phoneCode: formatRegion()
       },
       processTime: Date.now() - startTime
     };
