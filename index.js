@@ -10,9 +10,25 @@ const countries = require('./countries');
 const app = express();
 const port = process.env.PORT || 4000;
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+
 app.use(cors());
 app.set('json spaces', 2);
 
+// TikTok API configuration (from api.js)
+const API_CONFIG = {
+  host: "https://www.tikwm.com",
+  endpoints: {
+    searchVideos: "api/feed/search",
+    userLiked: "api/user/favorite",
+    videoComments: "api/comment/list",
+    trendingVideos: "api/feed/list",
+    // musicDetail: "api/music/info",
+    userFollowing: "api/user/following",
+    userFeed: "api/user/posts"
+  }
+};
+
+// Helper function for time ago formatting (unchanged)
 const fromNow = (dateString, isLive) => {
   const now = new Date();
   const targetDate = new Date(dateString);
@@ -50,7 +66,7 @@ const fromNow = (dateString, isLive) => {
   return `${prefix}${result}${suffix}`;
 };
 
-// Helper functions for TikTok formatting
+// TikTok formatting functions (moved from index.js and tiktok.js)
 const formatDuration = (seconds) => {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
@@ -90,36 +106,38 @@ const formatTime = (timestamp) => {
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit'
+    second: '2-digit',
   });
 };
 
 const formatRegion = (countryCode, countries) => {
-  if (!countryCode) return {
-    name: 'Tidak diketahui',
-    flag: '',
-    continent: '',
-    phoneCode: ''
-  };
-  
-  const country = countries.find(c => c.id === countryCode.toUpperCase());
-  if (!country) return {
-    name: countryCode,
-    flag: '',
-    continent: '',
-    phoneCode: ''
-  };
-  
+  if (!countryCode)
+    return {
+      name: 'Tidak diketahui',
+      flag: '',
+      continent: '',
+      phoneCode: '',
+    };
+
+  const country = countries.find((c) => c.id === countryCode.toUpperCase());
+  if (!country)
+    return {
+      name: countryCode,
+      flag: '',
+      continent: '',
+      phoneCode: '',
+    };
+
   return {
     name: country.name,
     flag: country.flag,
     continent: country.continent,
     phoneCode: country.phoneCode,
-    currencyId: country.currencyId
+    currencyId: country.currencyId,
   };
 };
 
-// YouTube endpoint
+// YouTube endpoint (unchanged)
 app.get('/yt/v-get', async (req, res) => {
   const videoId = req.query.id;
   let parts = req.query.parts ? req.query.parts.split(',') : [];
@@ -138,24 +156,25 @@ app.get('/yt/v-get', async (req, res) => {
     'topicDetails',
   ];
 
-  // Jika parts = all, gunakan semua part
   if (parts.includes('all')) {
     parts = validParts;
   } else {
-    parts = parts.filter(part => validParts.includes(part));
+    parts = parts.filter((part) => validParts.includes(part));
   }
 
   if (parts.length === 0) {
     return res.status(400).json({ error: 'Valid parts or "all" parameter is required' });
   }
 
-  const youtubeApiUrl = `https://www.googleapis.com/youtube/v3/videos?part=${parts.join(',')}&id=${videoId}&key=${YOUTUBE_API_KEY}`;
+  const youtubeApiUrl = `https://www.googleapis.com/youtube/v3/videos?part=${parts.join(
+    ','
+  )}&id=${videoId}&key=${YOUTUBE_API_KEY}`;
   const dislikeApiUrl = `https://returnyoutubedislikeapi.com/votes?videoId=${videoId}`;
 
   try {
     const [youtubeResponse, dislikeResponse] = await Promise.all([
       axios.get(youtubeApiUrl),
-      axios.get(dislikeApiUrl)
+      axios.get(dislikeApiUrl),
     ]);
 
     const videoData = youtubeResponse.data;
@@ -165,11 +184,9 @@ app.get('/yt/v-get', async (req, res) => {
       const videoItem = videoData.items[0];
       const statistics = videoItem.statistics || {};
 
-      // Tambahkan dislike dan rating
       statistics.dislikeCount = dislikeData.dislikes;
       statistics.rating = dislikeData.rating;
 
-      // Format tanggal
       const isLive = videoItem.snippet?.liveBroadcastContent === 'live';
       const formattedDate = fromNow(
         isLive ? videoItem.liveStreamingDetails?.actualStartTime : videoItem.snippet?.publishedAt,
@@ -182,14 +199,13 @@ app.get('/yt/v-get', async (req, res) => {
         videoItem.snippet.formattedDate = formattedDate;
       }
 
-      // Susun ulang statistics
       videoItem.statistics = {
         viewCount: statistics.viewCount,
         likeCount: statistics.likeCount,
         dislikeCount: statistics.dislikeCount,
         rating: statistics.rating,
         favoriteCount: statistics.favoriteCount,
-        commentCount: statistics.commentCount
+        commentCount: statistics.commentCount,
       };
     }
 
@@ -199,7 +215,29 @@ app.get('/yt/v-get', async (req, res) => {
   }
 });
 
-// TikTok endpoint with formatting
+// Helper function to convert mobile to desktop URL
+const isMobile = (url) => {
+  const mobileUrlRegex = /^https:\/\/(vt|m)\.tiktok\.com\/[a-zA-Z0-9]+\/?/;
+  return mobileUrlRegex.test(url);
+};
+
+const getDesktopUrl = async (url) => {
+  try {
+    if (isMobile(url)) {
+      const response = await axios.get(url, {
+        maxRedirects: 0,
+        validateStatus: (status) => status >= 300 && status < 400,
+      });
+      return response.headers.location || url;
+    }
+    return url;
+  } catch (error) {
+    console.error('Error converting to desktop URL:', error);
+    return url;
+  }
+};
+
+// TikTok video data endpoint
 app.get('/tt/v-get', async (req, res) => {
   const { url } = req.query;
 
@@ -208,7 +246,8 @@ app.get('/tt/v-get', async (req, res) => {
   }
 
   try {
-    const tiktokApiUrl = `https://tikwm.com/api/?url=${encodeURIComponent(url)}&hd=1`;
+    const finalUrl = await getDesktopUrl(url);
+    const tiktokApiUrl = `https://tikwm.com/api/?url=${encodeURIComponent(finalUrl)}&hd=1`;
     const response = await axios.get(tiktokApiUrl);
     const data = response.data;
 
@@ -216,7 +255,6 @@ app.get('/tt/v-get', async (req, res) => {
       return res.status(404).json({ error: 'Video not found' });
     }
 
-    // Format the response data
     const formattedData = {
       ...data,
       data: {
@@ -230,9 +268,9 @@ app.get('/tt/v-get', async (req, res) => {
           comment_count: formatNumber(data.data.comment_count),
           collect_count: formatNumber(data.data.collect_count),
           create_time: formatTime(data.data.create_time),
-          region: formatRegion(data.data.region, countries)
-        }
-      }
+          region: formatRegion(data.data.region, countries),
+        },
+      },
     };
 
     res.json(formattedData);
@@ -241,6 +279,7 @@ app.get('/tt/v-get', async (req, res) => {
   }
 });
 
+// TikTok user data endpoint
 app.get('/tt/user-get', async (req, res) => {
   const { username } = req.query;
 
@@ -253,7 +292,8 @@ app.get('/tt/user-get', async (req, res) => {
   try {
     const url = `https://www.tiktok.com/@${username}`;
     const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
     };
 
     const response = await axios.get(url, { headers });
@@ -273,7 +313,6 @@ app.get('/tt/user-get', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Format the data
     const formattedData = {
       ...userData,
       user: {
@@ -284,21 +323,20 @@ app.get('/tt/user-get', async (req, res) => {
           followerCount: formatNumber(userData.stats.followerCount),
           heartCount: formatNumber(userData.stats.heartCount),
           videoCount: formatNumber(userData.stats.videoCount),
-          followingCount: formatNumber(userData.stats.followingCount)
+          followingCount: formatNumber(userData.stats.followingCount),
         },
         formattedRegion: formatRegion(userData.user.region, countries),
-        phoneCode: formatRegion()
       },
-      processTime: Date.now() - startTime
+      processTime: Date.now() - startTime,
     };
 
-    res.json({ msg: "success", ...formattedData });
+    res.json({ msg: 'success', ...formattedData });
   } catch (error) {
-    res.status(500).json({ msg: "error", error: error.message });
+    res.status(500).json({ msg: 'error', error: error.message });
   }
 });
 
-// Endpoint download video TikTok
+// TikTok video download endpoint
 app.get('/tt/v-download', async (req, res) => {
   const { url, quality } = req.query;
 
@@ -307,7 +345,8 @@ app.get('/tt/v-download', async (req, res) => {
   }
 
   try {
-    const tiktokApiUrl = `https://tikwm.com/api/?url=${encodeURIComponent(url)}&hd=1`;
+    const finalUrl = await getDesktopUrl(url);
+    const tiktokApiUrl = `https://tikwm.com/api/?url=${encodeURIComponent(finalUrl)}&hd=1`;
     const response = await axios.get(tiktokApiUrl);
     const data = response.data;
 
@@ -327,10 +366,283 @@ app.get('/tt/v-download', async (req, res) => {
     const videoStream = await axios({
       url: videoUrl,
       method: 'GET',
-      responseType: 'stream'
+      responseType: 'stream',
     });
 
     videoStream.data.pipe(res);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// TikTok search videos endpoint
+app.get('/tt/search-videos', async (req, res) => {
+  const { keywords } = req.query;
+
+  if (!keywords) {
+    return res.status(400).json({ error: 'Keywords are required' });
+  }
+
+  try {
+    const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.searchVideos}?keywords=${encodeURIComponent(
+      keywords
+    )}`;
+    const response = await axios.get(apiUrl, { timeout: 10000 });
+    const videos = response.data.data.videos;
+
+    if (!videos?.length) {
+      return res.status(404).json({ error: 'No videos found for this keyword' });
+    }
+
+    const formattedVideos = videos.map((video) => ({
+      ...video,
+      formatted: {
+        play_count: formatNumber(video.play_count || 0),
+        digg_count: formatNumber(video.digg_count || 0),
+        comment_count: formatNumber(video.comment_count || 0),
+        collect_count: formatNumber(video.collect_count || 0),
+        create_time: formatTime(video.create_time),
+      },
+    }));
+
+    res.json({ data: { videos: formattedVideos } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// TikTok user favorites endpoint
+app.get('/tt/user-favorites', async (req, res) => {
+  const { username } = req.query;
+
+  if (!username) {
+    return res.status(400).json({ error: 'Username is required' });
+  }
+
+  try {
+    const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.userLiked}?unique_id=${encodeURIComponent(
+      username
+    )}`;
+    const response = await axios.get(apiUrl, { timeout: 10000 });
+    const videos = response.data.data.videos;
+
+    if (!videos?.length) {
+      return res.status(404).json({ error: 'No favorite videos found for this user' });
+    }
+
+    const formattedVideos = videos.map((video) => ({
+      ...video,
+      formatted: {
+        play_count: formatNumber(video.play_count || 0),
+        digg_count: formatNumber(video.digg_count || 0),
+        comment_count: formatNumber(video.comment_count || 0),
+        share_count: formatNumber(video.share_count || 0),
+        collect_count: formatNumber(video.collect_count || 0),
+        create_time: formatTime(video.create_time),
+        region: formatRegion(video.region, countries)
+      },
+    }));
+
+    res.json({ data: { videos: formattedVideos } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// TikTok video comments endpoint
+app.get('/tt/video-comments', async (req, res) => {
+  const { url } = req.query;
+
+  if (!url) {
+    return res.status(400).json({ error: 'Video URL is required' });
+  }
+
+  try {
+    const finalUrl = await getDesktopUrl(url);
+    // Fetch video metadata to get unique_id and user_id
+    const videoResponse = await axios.get(
+      `http://localhost:${port}/tt/v-get?url=${encodeURIComponent(finalUrl)}`
+    );
+    const videoData = videoResponse.data;
+
+    if (!videoData.data) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    const uniqueId = videoData.data.author?.unique_id || 'unknown';
+    const userId = videoData.data.author?.id || 'unknown';
+
+    const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.videoComments}?url=${encodeURIComponent(
+      finalUrl
+    )}`;
+    const response = await axios.get(apiUrl, { timeout: 10000 });
+    const comments = response.data.data.comments;
+
+    if (!comments?.length) {
+      return res.status(404).json({ error: 'No comments found for this video' });
+    }
+
+    const formattedComments = comments.map((comment) => ({
+      ...comment,
+      formatted: {
+        create_time: formatTime(comment.create_time),
+        digg_count: formatNumber(comment.digg_count || 0),
+      },
+    }));
+
+    res.json({
+      data: {
+        comments: formattedComments,
+        unique_id: uniqueId,
+        user_id: userId,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// TikTok trending videos endpoint
+app.get('/tt/trending', async (req, res) => {
+  const { region } = req.query;
+
+  if (!region) {
+    return res.status(400).json({ error: 'region is required' });
+  }
+
+  try {
+    const regionData = countries.find((c) => c.name.toLowerCase() === region.toLowerCase());
+    if (!regionData) {
+      return res.status(404).json({ error: `region "${region}" not found` });
+    }
+
+    const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.trendingVideos}?region=${regionData.id.toLowerCase()}`;
+    const response = await axios.get(apiUrl, { timeout: 10000 });
+    const videos = response.data.data;
+
+    if (!videos?.length) {
+      return res.status(404).json({ error: 'No trending videos found for this region' });
+    }
+
+    const formattedVideos = videos.map((video) => ({
+      ...video,
+      formatted: {
+        play_count: formatNumber(video.play_count || 0),
+        digg_count: formatNumber(video.digg_count || 0),
+        comment_count: formatNumber(video.comment_count || 0),
+        create_time: formatTime(video.create_time),
+        region: formatRegion(video.region, countries),
+      },
+    }));
+
+    res.json({ data: formattedVideos });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// TikTok user following endpoint
+app.get('/tt/user-following', async (req, res) => {
+  const { username } = req.query;
+
+  if (!username) {
+    return res.status(400).json({ error: 'Username is required' });
+  }
+
+  try {
+    const userResponse = await axios.get(
+      `http://localhost:${port}/tt/user-get?username=${encodeURIComponent(username)}`
+    );
+    const userData = userResponse.data;
+    if (userData.msg !== 'success' || !userData.user?.id) {
+      return res.status(404).json({ error: 'Failed to get user ID' });
+    }
+    const userId = userData.user.id;
+
+    const apiUrl = `${API_CONFIG.host}/${
+      API_CONFIG.endpoints.userFollowing
+    }?unique_id=${encodeURIComponent(username)}&user_id=${userId}`;
+    const response = await axios.get(apiUrl, { timeout: 10000 });
+    const followings = response.data.data.followings;
+
+    if (!followings?.length) {
+      return res.status(404).json({ error: 'No following accounts found' });
+    }
+
+    const formattedFollowings = followings.map((user) => ({
+      ...user,
+      formatted: {
+        follower_count: formatNumber(user.follower_count || 0),
+        aweme_count: formatNumber(user.aweme_count || 0),
+        region: formatRegion(user.region, countries),
+      },
+    }));
+
+    res.json({ data: { followings: formattedFollowings } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// TikTok user posts endpoint
+app.get('/tt/user-posts', async (req, res) => {
+  const { username } = req.query;
+
+  if (!username) {
+    return res.status(400).json({ error: 'Username is required' });
+  }
+
+  try {
+    // Fetch user data to get statistics
+    const userResponse = await axios.get(
+      `http://localhost:${port}/tt/user-get?username=${encodeURIComponent(username)}`
+    );
+    const userData = userResponse.data;
+
+    if (userData.msg !== 'success' || !userData.user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Fetch user posts
+    const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.userFeed}?unique_id=${encodeURIComponent(
+      username
+    )}`;
+    const response = await axios.get(apiUrl, { timeout: 10000 });
+    const videos = response.data.data.videos;
+
+    if (!videos?.length) {
+      return res.status(404).json({ error: 'No videos found for this user' });
+    }
+
+    // Format videos
+    const formattedVideos = videos.map((video) => ({
+      ...video,
+      formatted: {
+        play_count: formatNumber(video.play_count || 0),
+        digg_count: formatNumber(video.digg_count || 0),
+        comment_count: formatNumber(video.comment_count || 0),
+        share_count: formatNumber(video.share_count || 0),
+        download_count: formatNumber(video.download_count || 0),
+        collect_count: formatNumber(video.collect_count || 0),
+        create_time: formatTime(video.create_time),
+      },
+    }));
+
+    // Format user statistics
+    const formattedUserStats = {
+      aweme_count: formatNumber(userData.stats.videoCount || 0),
+      following_count: formatNumber(userData.stats.followingCount || 0),
+      follower_count: formatNumber(userData.stats.followerCount || 0),
+      favoriting_count: formatNumber(userData.stats.diggCount || 0), // Likes given (may be unavailable)
+      total_favorited: formatNumber(userData.stats.heartCount || 0), // Total likes received
+    };
+
+    res.json({
+      data: {
+        videos: formattedVideos,
+        user_stats: formattedUserStats,
+      },
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
