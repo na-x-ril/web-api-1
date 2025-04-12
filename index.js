@@ -531,11 +531,10 @@ app.get('/tt/trending', async (req, res) => {
         digg_count: formatNumber(video.digg_count || 0),
         comment_count: formatNumber(video.comment_count || 0),
         create_time: formatTime(video.create_time),
-        region: formatRegion(video.region, countries),
       },
     }));
 
-    res.json({ data: formattedVideos });
+    res.json({ data: { region: regionData.name, formattedVideos } });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
