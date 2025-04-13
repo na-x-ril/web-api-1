@@ -22,7 +22,7 @@ const API_CONFIG = {
     userLiked: "api/user/favorite",
     videoComments: "api/comment/list",
     trendingVideos: "api/feed/list",
-    // musicDetail: "api/music/info",
+    musicDetail: "api/music/info",
     userFollowing: "api/user/following",
     userFeed: "api/user/posts"
   }
@@ -642,6 +642,45 @@ app.get('/tt/user-posts', async (req, res) => {
         user_stats: formattedUserStats,
       },
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// TikTok audio detail endpoint
+app.get('/tt/audio-detail', async (req, res) => {
+  const { url } = req.query;
+
+  if (!url) {
+    return res.status(400).json({ error: 'Audio URL is required' });
+  }
+
+  try {
+    // Konversi URL mobile ke desktop jika perlu
+    const finalUrl = await getDesktopUrl(url);
+
+    // Panggil API TikTok untuk mendapatkan detail audio
+    const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.musicDetail}?url=${encodeURIComponent(finalUrl)}`;
+    const response = await axios.get(apiUrl, { timeout: 10000 });
+    const data = response.data;
+
+    if (!data.data) {
+      return res.status(404).json({ error: 'Audio not found' });
+    }
+
+    // Format data audio
+    const formattedData = {
+      ...data,
+      data: {
+        ...data.data,
+        formatted: {
+          duration: formatDuration(data.data.duration),
+          video_count: formatNumber(data.data.video_count),
+        },
+      },
+    };
+
+    res.json(formattedData);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
