@@ -708,7 +708,7 @@ app.get('/tt/audio-download', async (req, res) => {
     // Extract id and title for filename
     const audioId = data.data.id || 'unknown';
     const audioTitle = data.data.title || 'unknown';
-    const filename = `${audioId}-${audioTitle}.mp3`;
+    const filename = `${audioTitle}-${audioId}.mp3`;
 
     // Get the audio stream URL
     const audioUrl = data.data.play;
