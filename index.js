@@ -558,9 +558,7 @@ app.get('/tt/user-following', async (req, res) => {
     }
     const userId = userData.user.id;
 
-    const apiUrl = `${API_CONFIG.host}/${
-      API_CONFIG.endpoints.userFollowing
-    }?unique_id=${encodeURIComponent(username)}&user_id=${userId}`;
+    const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.userFollowing}?unique_id=${encodeURIComponent(username)}&user_id=${userId}`;
     const response = await axios.get(apiUrl, { timeout: 10000 });
     const followings = response.data.data.followings;
 
@@ -681,6 +679,52 @@ app.get('/tt/audio-detail', async (req, res) => {
     };
 
     res.json(formattedData);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// TikTok audio download endpoint
+app.get('/tt/audio-download', async (req, res) => {
+  const { url } = req.query;
+
+  if (!url) {
+    return res.status(400).json({ error: 'Audio URL is required' });
+  }
+
+  try {
+    // Convert mobile URL to desktop if necessary
+    const finalUrl = await getDesktopUrl(url);
+
+    // Fetch audio metadata from TikTok API
+    const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.musicDetail}?url=${encodeURIComponent(finalUrl)}`;
+    const response = await axios.get(apiUrl, { timeout: 10000 });
+    const data = response.data;
+
+    if (!data.data) {
+      return res.status(404).json({ error: 'Audio not found' });
+    }
+
+    // Extract id and title for filename
+    const audioId = data.data.id || 'unknown';
+    const audioTitle = data.data.title || 'unknown';
+    const filename = `${audioId}-${audioTitle}.mp3`;
+
+    // Get the audio stream URL
+    const audioUrl = data.data.play;
+
+    // Set headers for file download
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'audio/mpeg');
+
+    // Stream the audio file
+    const audioStream = await axios({
+      url: audioUrl,
+      method: 'GET',
+      responseType: 'stream',
+    });
+
+    audioStream.data.pipe(res);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
