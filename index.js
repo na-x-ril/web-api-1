@@ -697,7 +697,7 @@ app.get('/tt/audio-download', async (req, res) => {
     const finalUrl = await getDesktopUrl(url);
 
     // Fetch audio metadata from TikTok API
-    const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.musicDetail}?url=${encodeURIComponent(finalUrl)}`;
+    const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.musicDetail}?url=${finalUrl}`;
     const response = await axios.get(apiUrl, { timeout: 10000 });
     const data = response.data;
 
@@ -707,7 +707,8 @@ app.get('/tt/audio-download', async (req, res) => {
 
     // Extract id and title for filename
     const audioId = data.data.id || 'unknown';
-    const audioTitle = data.data.title || 'unknown';
+    let audioTitle = data.data.title || 'unknown';
+    audioTitle = audioTitle.replace(/^original sound - /, '');
     const filename = `${audioTitle}-${audioId}.mp3`;
 
     // Get the audio stream URL
