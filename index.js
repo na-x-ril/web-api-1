@@ -2,10 +2,13 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
+const { fetch } = require('undici');
 const cheerio = require('cheerio');
 const path = require('path');
 const countries = require('./countries');
+const { pipeline } = require('stream');
+const { promisify } = require('util');
+const streamPipeline = promisify(pipeline);
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -137,7 +140,7 @@ const formatRegion = (countryCode, countries) => {
   };
 };
 
-// YouTube endpoint (unchanged)
+// YouTube endpoint (modified for undici)
 app.get('/yt/v-get', async (req, res) => {
   const videoId = req.query.id;
   let parts = req.query.parts ? req.query.parts.split(',') : [];
@@ -173,12 +176,12 @@ app.get('/yt/v-get', async (req, res) => {
 
   try {
     const [youtubeResponse, dislikeResponse] = await Promise.all([
-      axios.get(youtubeApiUrl),
-      axios.get(dislikeApiUrl),
+      fetch(youtubeApiUrl).then(res => res.json()),
+      fetch(dislikeApiUrl).then(res => res.json()),
     ]);
 
-    const videoData = youtubeResponse.data;
-    const dislikeData = dislikeResponse.data;
+    const videoData = youtubeResponse;
+    const dislikeData = dislikeResponse;
 
     if (videoData.items?.length > 0) {
       const videoItem = videoData.items[0];
@@ -224,11 +227,10 @@ const isMobile = (url) => {
 const getDesktopUrl = async (url) => {
   try {
     if (isMobile(url)) {
-      const response = await axios.get(url, {
-        maxRedirects: 0,
-        validateStatus: (status) => status >= 300 && status < 400,
+      const response = await fetch(url, {
+        redirect: 'manual'
       });
-      return response.headers.location || url;
+      return response.headers.get('location') || url;
     }
     return url;
   } catch (error) {
@@ -248,8 +250,8 @@ app.get('/tt/v-get', async (req, res) => {
   try {
     const finalUrl = await getDesktopUrl(url);
     const tiktokApiUrl = `https://tikwm.com/api/?url=${encodeURIComponent(finalUrl)}&hd=1`;
-    const response = await axios.get(tiktokApiUrl);
-    const data = response.data;
+    const response = await fetch(tiktokApiUrl);
+    const data = await response.json();
 
     if (!data.data) {
       return res.status(404).json({ error: 'Video not found' });
@@ -296,8 +298,8 @@ app.get('/tt/user-get', async (req, res) => {
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
     };
 
-    const response = await axios.get(url, { headers });
-    const html = response.data;
+    const response = await fetch(url, { headers });
+    const html = await response.text();
 
     const $ = cheerio.load(html);
     const scriptElement = $('#__UNIVERSAL_DATA_FOR_REHYDRATION__');
@@ -347,8 +349,8 @@ app.get('/tt/v-download', async (req, res) => {
   try {
     const finalUrl = await getDesktopUrl(url);
     const tiktokApiUrl = `https://tikwm.com/api/?url=${encodeURIComponent(finalUrl)}&hd=1`;
-    const response = await axios.get(tiktokApiUrl);
-    const data = response.data;
+    const response = await fetch(tiktokApiUrl);
+    const data = await response.json();
 
     if (!data.data) {
       return res.status(404).json({ error: 'Video not found' });
@@ -363,13 +365,8 @@ app.get('/tt/v-download', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Type', 'video/mp4');
 
-    const videoStream = await axios({
-      url: videoUrl,
-      method: 'GET',
-      responseType: 'stream',
-    });
-
-    videoStream.data.pipe(res);
+    const videoResponse = await fetch(videoUrl);
+    await streamPipeline(videoResponse.body, res);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -387,8 +384,9 @@ app.get('/tt/search-videos', async (req, res) => {
     const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.searchVideos}?keywords=${encodeURIComponent(
       keywords
     )}`;
-    const response = await axios.get(apiUrl, { timeout: 10000 });
-    const videos = response.data.data.videos;
+    const response = await fetch(apiUrl, { timeout: 10000 });
+    const data = await response.json();
+    const videos = data.data.videos;
 
     if (!videos?.length) {
       return res.status(404).json({ error: 'No videos found for this keyword' });
@@ -423,8 +421,9 @@ app.get('/tt/user-favorites', async (req, res) => {
     const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.userLiked}?unique_id=${encodeURIComponent(
       username
     )}`;
-    const response = await axios.get(apiUrl, { timeout: 10000 });
-    const videos = response.data.data.videos;
+    const response = await fetch(apiUrl, { timeout: 10000 });
+    const data = await response.json();
+    const videos = data.data.videos;
 
     if (!videos?.length) {
       return res.status(404).json({ error: 'No favorite videos found for this user' });
@@ -460,10 +459,10 @@ app.get('/tt/video-comments', async (req, res) => {
   try {
     const finalUrl = await getDesktopUrl(url);
     // Fetch video metadata to get unique_id and user_id
-    const videoResponse = await axios.get(
+    const videoResponse = await fetch(
       `http://localhost:${port}/tt/v-get?url=${encodeURIComponent(finalUrl)}`
     );
-    const videoData = videoResponse.data;
+    const videoData = await videoResponse.json();
 
     if (!videoData.data) {
       return res.status(404).json({ error: 'Video not found' });
@@ -475,8 +474,9 @@ app.get('/tt/video-comments', async (req, res) => {
     const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.videoComments}?url=${encodeURIComponent(
       finalUrl
     )}`;
-    const response = await axios.get(apiUrl, { timeout: 10000 });
-    const comments = response.data.data.comments;
+    const response = await fetch(apiUrl, { timeout: 10000 });
+    const data = await response.json();
+    const comments = data.data.comments;
 
     if (!comments?.length) {
       return res.status(404).json({ error: 'No comments found for this video' });
@@ -517,8 +517,9 @@ app.get('/tt/trending', async (req, res) => {
     }
 
     const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.trendingVideos}?region=${regionData.id.toLowerCase()}`;
-    const response = await axios.get(apiUrl, { timeout: 10000 });
-    const videos = response.data.data;
+    const response = await fetch(apiUrl, { timeout: 10000 });
+    const data = await response.json();
+    const videos = data.data;
 
     if (!videos?.length) {
       return res.status(404).json({ error: 'No trending videos found for this region' });
@@ -549,18 +550,19 @@ app.get('/tt/user-following', async (req, res) => {
   }
 
   try {
-    const userResponse = await axios.get(
+    const userResponse = await fetch(
       `http://localhost:${port}/tt/user-get?username=${encodeURIComponent(username)}`
     );
-    const userData = userResponse.data;
+    const userData = await userResponse.json();
     if (userData.msg !== 'success' || !userData.user?.id) {
       return res.status(404).json({ error: 'Failed to get user ID' });
     }
     const userId = userData.user.id;
 
     const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.userFollowing}?unique_id=${encodeURIComponent(username)}&user_id=${userId}`;
-    const response = await axios.get(apiUrl, { timeout: 10000 });
-    const followings = response.data.data.followings;
+    const response = await fetch(apiUrl, { timeout: 10000 });
+    const data = await response.json();
+    const followings = data.data.followings;
 
     if (!followings?.length) {
       return res.status(404).json({ error: 'No following accounts found' });
@@ -591,10 +593,10 @@ app.get('/tt/user-posts', async (req, res) => {
 
   try {
     // Fetch user data to get statistics
-    const userResponse = await axios.get(
+    const userResponse = await fetch(
       `http://localhost:${port}/tt/user-get?username=${encodeURIComponent(username)}`
     );
-    const userData = userResponse.data;
+    const userData = await userResponse.json();
 
     if (userData.msg !== 'success' || !userData.user) {
       return res.status(404).json({ error: 'User not found' });
@@ -604,8 +606,9 @@ app.get('/tt/user-posts', async (req, res) => {
     const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.userFeed}?unique_id=${encodeURIComponent(
       username
     )}`;
-    const response = await axios.get(apiUrl, { timeout: 10000 });
-    const videos = response.data.data.videos;
+    const response = await fetch(apiUrl, { timeout: 10000 });
+    const data = await response.json();
+    const videos = data.data.videos;
 
     if (!videos?.length) {
       return res.status(404).json({ error: 'No videos found for this user' });
@@ -659,8 +662,8 @@ app.get('/tt/audio-detail', async (req, res) => {
 
     // Panggil API TikTok untuk mendapatkan detail audio
     const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.musicDetail}?url=${encodeURIComponent(finalUrl)}`;
-    const response = await axios.get(apiUrl, { timeout: 10000 });
-    const data = response.data;
+    const response = await fetch(apiUrl, { timeout: 10000 });
+    const data = await response.json();
 
     if (!data.data) {
       return res.status(404).json({ error: 'Audio not found' });
@@ -698,8 +701,8 @@ app.get('/tt/audio-download', async (req, res) => {
 
     // Fetch audio metadata from TikTok API
     const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.musicDetail}?url=${finalUrl}`;
-    const response = await axios.get(apiUrl, { timeout: 10000 });
-    const data = response.data;
+    const response = await fetch(apiUrl, { timeout: 10000 });
+    const data = await response.json();
 
     if (!data.data) {
       return res.status(404).json({ error: 'Audio not found' });
@@ -719,13 +722,8 @@ app.get('/tt/audio-download', async (req, res) => {
     res.setHeader('Content-Type', 'audio/mpeg');
 
     // Stream the audio file
-    const audioStream = await axios({
-      url: audioUrl,
-      method: 'GET',
-      responseType: 'stream',
-    });
-
-    audioStream.data.pipe(res);
+    const audioResponse = await fetch(audioUrl);
+    await streamPipeline(audioResponse.body, res);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
