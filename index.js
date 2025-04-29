@@ -140,6 +140,17 @@ const formatRegion = (countryCode, countries) => {
   };
 };
 
+// Shorten URL using TinyURL
+const shortenUrl = async (longUrl) => {
+  try {
+    const response = await fetch(`http://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`);
+    return await response.text();
+  } catch (error) {
+    console.error('Error shortening URL:', error);
+    return longUrl;
+  }
+};
+
 // YouTube endpoint (modified for undici)
 app.get('/yt/v-get', async (req, res) => {
   const videoId = req.query.id;
@@ -257,10 +268,19 @@ app.get('/tt/v-get', async (req, res) => {
       return res.status(404).json({ error: 'Video not found' });
     }
 
+    // Generate shortened URLs for images if they exist
+    let shortenedImages = [];
+    if (data.data.images && Array.isArray(data.data.images)) {
+      shortenedImages = await Promise.all(
+        data.data.images.map(async (imageUrl) => await shortenUrl(imageUrl))
+      );
+    }
+
     const formattedData = {
       ...data,
       data: {
         ...data.data,
+        shortened_images: shortenedImages,
         formatted: {
           duration: formatDuration(data.data.duration),
           size: formatBytes(data.data.size),
@@ -374,36 +394,48 @@ app.get('/tt/v-download', async (req, res) => {
 
 // TikTok search videos endpoint
 app.get('/tt/search-videos', async (req, res) => {
-  const { keywords } = req.query;
+  const { keywords, cursor = 0, count = 10 } = req.query;
 
   if (!keywords) {
-    return res.status(400).json({ error: 'Keywords are required' });
+    return res.status(400).json({ error: 'Keywords parameter is required' });
   }
 
   try {
-    const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.searchVideos}?keywords=${encodeURIComponent(
-      keywords
-    )}`;
-    const response = await fetch(apiUrl, { timeout: 10000 });
+    const tiktokApiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.searchVideos}?keywords=${encodeURIComponent(keywords)}&cursor=${cursor}&count=${count}`;
+    const response = await fetch(tiktokApiUrl);
     const data = await response.json();
-    const videos = data.data.videos;
 
-    if (!videos?.length) {
-      return res.status(404).json({ error: 'No videos found for this keyword' });
+    if (!data.data || !data.data.videos) {
+      return res.status(404).json({ error: 'No videos found' });
     }
 
-    const formattedVideos = videos.map((video) => ({
-      ...video,
-      formatted: {
-        play_count: formatNumber(video.play_count || 0),
-        digg_count: formatNumber(video.digg_count || 0),
-        comment_count: formatNumber(video.comment_count || 0),
-        collect_count: formatNumber(video.collect_count || 0),
-        create_time: formatTime(video.create_time),
-      },
-    }));
+    // Process videos to include shortened play URL
+    const videos = await Promise.all(
+      data.data.videos.map(async (video) => {
+        const shortenedPlay = await shortenUrl(video.play);
+        return {
+          ...video,
+          shortened_play: shortenedPlay,
+          formatted: {
+            play_count: formatNumber(video.play_count),
+            digg_count: formatNumber(video.digg_count),
+            comment_count: formatNumber(video.comment_count),
+            collect_count: formatNumber(video.collect_count || 0),
+            create_time: formatTime(video.create_time),
+          },
+        };
+      })
+    );
 
-    res.json({ data: { videos: formattedVideos } });
+    const formattedData = {
+      ...data,
+      data: {
+        ...data.data,
+        videos,
+      },
+    };
+
+    res.json(formattedData);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -418,31 +450,42 @@ app.get('/tt/user-favorites', async (req, res) => {
   }
 
   try {
-    const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.userLiked}?unique_id=${encodeURIComponent(
-      username
-    )}`;
+    const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.userLiked}?unique_id=${encodeURIComponent(username)}`;
     const response = await fetch(apiUrl, { timeout: 10000 });
     const data = await response.json();
-    const videos = data.data.videos;
 
-    if (!videos?.length) {
+    if (!data?.data?.videos?.length) {
       return res.status(404).json({ error: 'No favorite videos found for this user' });
     }
 
-    const formattedVideos = videos.map((video) => ({
-      ...video,
-      formatted: {
-        play_count: formatNumber(video.play_count || 0),
-        digg_count: formatNumber(video.digg_count || 0),
-        comment_count: formatNumber(video.comment_count || 0),
-        share_count: formatNumber(video.share_count || 0),
-        collect_count: formatNumber(video.collect_count || 0),
-        create_time: formatTime(video.create_time),
-        region: formatRegion(video.region, countries)
-      },
-    }));
+    const videos = await Promise.all(
+      data.data.videos.map(async (video) => {
+        const shortenedPlay = await shortenUrl(video.play);
+        return {
+          ...video,
+          shortened_play: shortenedPlay,
+          formatted: {
+            play_count: formatNumber(video.play_count),
+            digg_count: formatNumber(video.digg_count),
+            comment_count: formatNumber(video.comment_count),
+            share_count: formatNumber(video.share_count),
+            collect_count: formatNumber(video.collect_count || 0),
+            create_time: formatTime(video.create_time),
+            region: formatRegion(video.region, countries)
+          },
+        };
+      })
+    );
 
-    res.json({ data: { videos: formattedVideos } });
+    const formattedData = {
+      ...data,
+      data: {
+        ...data.data,
+        videos,
+      },
+    };
+
+    res.json(formattedData);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -506,36 +549,40 @@ app.get('/tt/video-comments', async (req, res) => {
 app.get('/tt/trending', async (req, res) => {
   const { region } = req.query;
 
-  if (!region) {
-    return res.status(400).json({ error: 'region is required' });
-  }
-
   try {
     const regionData = countries.find((c) => c.name.toLowerCase() === region.toLowerCase());
-    if (!regionData) {
-      return res.status(404).json({ error: `region "${region}" not found` });
-    }
-
     const apiUrl = `${API_CONFIG.host}/${API_CONFIG.endpoints.trendingVideos}?region=${regionData.id.toLowerCase()}`;
     const response = await fetch(apiUrl, { timeout: 10000 });
     const data = await response.json();
-    const videos = data.data;
 
-    if (!videos?.length) {
+    if (!data?.data?.length) {
       return res.status(404).json({ error: 'No trending videos found for this region' });
     }
 
-    const formattedVideos = videos.map((video) => ({
-      ...video,
-      formatted: {
-        play_count: formatNumber(video.play_count || 0),
-        digg_count: formatNumber(video.digg_count || 0),
-        comment_count: formatNumber(video.comment_count || 0),
-        create_time: formatTime(video.create_time),
-      },
-    }));
+    const formattedVideos = await Promise.all(
+      data.data.map(async (video) => {
+        const shortenedPlay = await shortenUrl(video.play);
+        return {
+          ...video,
+          shortened_play: shortenedPlay,
+          formatted: {
+            play_count: formatNumber(video.play_count),
+            digg_count: formatNumber(video.digg_count),
+            comment_count: formatNumber(video.comment_count),
+            create_time: formatTime(video.create_time),
+          },
+        };
+      })
+    );
 
-    res.json({ data: { region: regionData.name, formattedVideos } });
+    const formattedData = {
+      data: {
+        region: regionData.name,
+        formattedVideos,
+      },
+    };
+
+    res.json(formattedData);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -593,9 +640,7 @@ app.get('/tt/user-posts', async (req, res) => {
 
   try {
     // Fetch user data to get statistics
-    const userResponse = await fetch(
-      `http://localhost:${port}/tt/user-get?username=${encodeURIComponent(username)}`
-    );
+    const userResponse = await fetch(`http://localhost:${port}/tt/user-get?username=${encodeURIComponent(username)}`);
     const userData = await userResponse.json();
 
     if (userData.msg !== 'success' || !userData.user) {
@@ -614,19 +659,25 @@ app.get('/tt/user-posts', async (req, res) => {
       return res.status(404).json({ error: 'No videos found for this user' });
     }
 
-    // Format videos
-    const formattedVideos = videos.map((video) => ({
-      ...video,
-      formatted: {
-        play_count: formatNumber(video.play_count || 0),
-        digg_count: formatNumber(video.digg_count || 0),
-        comment_count: formatNumber(video.comment_count || 0),
-        share_count: formatNumber(video.share_count || 0),
-        download_count: formatNumber(video.download_count || 0),
-        collect_count: formatNumber(video.collect_count || 0),
-        create_time: formatTime(video.create_time),
-      },
-    }));
+    // Format videos with shortened_play
+    const formattedVideos = await Promise.all(
+      videos.map(async (video) => {
+        const shortened_play = await shortenUrl(video.play);
+        return {
+          ...video, // Preserve all original video fields
+          shortened_play, // Add shortened_play field
+          formatted: {
+            play_count: formatNumber(video.play_count || 0),
+            digg_count: formatNumber(video.digg_count || 0),
+            comment_count: formatNumber(video.comment_count || 0),
+            share_count: formatNumber(video.share_count || 0),
+            download_count: formatNumber(video.download_count || 0),
+            collect_count: formatNumber(video.collect_count || 0),
+            create_time: formatTime(video.create_time),
+          },
+        };
+      })
+    );
 
     // Format user statistics
     const formattedUserStats = {
@@ -639,8 +690,8 @@ app.get('/tt/user-posts', async (req, res) => {
 
     res.json({
       data: {
-        videos: formattedVideos,
-        user_stats: formattedUserStats,
+        videos: formattedVideos, // Use formattedVideos with shortened_play
+        user_stats: formattedUserStats, // Unchanged user_stats
       },
     });
   } catch (error) {
