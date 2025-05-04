@@ -276,13 +276,26 @@ app.get('/tt/v-get', async (req, res) => {
       );
     }
 
+    // Determine duration based on content type
+    let formattedDuration;
+    if (data.data.duration > 0) {
+      // If it's a video, use video duration
+      formattedDuration = formatDuration(data.data.duration);
+    } else if (data.data.music_info?.duration) {
+      // If it's an image with music, use music duration
+      formattedDuration = formatDuration(data.data.music_info.duration);
+    } else {
+      // Default case
+      formattedDuration = "0:00";
+    }
+
     const formattedData = {
       ...data,
       data: {
         ...data.data,
         shortened_images: shortenedImages,
         formatted: {
-          duration: formatDuration(data.data.duration),
+          duration: formattedDuration,
           size: formatBytes(data.data.size),
           hd_size: formatBytes(data.data.hd_size),
           play_count: formatNumber(data.data.play_count),
