@@ -1,6 +1,5 @@
 import { formatNumber, formatTime, formatRegion } from '../../utils.js';
 import countries from '../../countries.js';
-import cheerio from 'cheerio';
 
 export default async function handler(req, res) {
   const { username } = req.query;
@@ -17,14 +16,13 @@ export default async function handler(req, res) {
     const response = await fetch(url, { headers });
     const html = await response.text();
 
-    const $ = cheerio.load(html);
-    const scriptElement = $('#__UNIVERSAL_DATA_FOR_REHYDRATION__');
-
-    if (scriptElement.length === 0) {
+    // Cari isi script __UNIVERSAL_DATA_FOR_REHYDRATION__ dengan regex
+    const match = html.match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>(.*?)<\/script>/s);
+    if (!match) {
       return res.status(404).json({ error: 'User data not found or script element missing' });
     }
 
-    const jsonData = JSON.parse(scriptElement.html());
+    const jsonData = JSON.parse(match[1]);
     const userData = jsonData?.__DEFAULT_SCOPE__?.['webapp.user-detail']?.userInfo || {};
 
     if (!userData.user) {

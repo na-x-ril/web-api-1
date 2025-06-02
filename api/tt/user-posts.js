@@ -5,12 +5,12 @@ export default async function handler(req, res) {
   if (!username) return res.status(400).json({ error: 'Username is required' });
 
   try {
-    const userResponse = await fetch(
-      `${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'http://localhost:3000'}/api/tt/user-get?username=${encodeURIComponent(username)}`
-    );
-    const userData = await userResponse.json();
-
-    if (userData.msg !== 'success' || !userData.user) {
+    // Ambil data user dari API tikwm
+    const userInfoUrl = `https://www.tikwm.com/api/user/info?unique_id=${encodeURIComponent(username)}`;
+    const userInfoResponse = await fetch(userInfoUrl);
+    const userInfoData = await userInfoResponse.json();
+    const userStats = userInfoData?.data?.stats;
+    if (!userStats) {
       return res.status(404).json({ error: 'User not found' });
     }
 
@@ -43,11 +43,11 @@ export default async function handler(req, res) {
     );
 
     const formattedUserStats = {
-      aweme_count: formatNumber(userData.stats.videoCount || 0),
-      following_count: formatNumber(userData.stats.followingCount || 0),
-      follower_count: formatNumber(userData.stats.followerCount || 0),
-      favoriting_count: formatNumber(userData.stats.diggCount || 0),
-      total_favorited: formatNumber(userData.stats.heartCount || 0),
+      aweme_count: formatNumber(userStats.aweme_count || 0),
+      following_count: formatNumber(userStats.following_count || 0),
+      follower_count: formatNumber(userStats.follower_count || 0),
+      favoriting_count: formatNumber(userStats.digg_count || 0),
+      total_favorited: formatNumber(userStats.heart_count || 0),
     };
 
     res.status(200).json({

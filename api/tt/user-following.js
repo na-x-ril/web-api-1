@@ -6,14 +6,14 @@ export default async function handler(req, res) {
   if (!username) return res.status(400).json({ error: 'Username is required' });
 
   try {
-    const userResponse = await fetch(
-      `${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'http://localhost:3000'}/api/tt/user-get?username=${encodeURIComponent(username)}`
-    );
-    const userData = await userResponse.json();
-    if (userData.msg !== 'success' || !userData.user?.id) {
+    // Ambil userId dari API tikwm
+    const userInfoUrl = `https://www.tikwm.com/api/user/info?unique_id=${encodeURIComponent(username)}`;
+    const userInfoResponse = await fetch(userInfoUrl);
+    const userInfoData = await userInfoResponse.json();
+    const userId = userInfoData?.data?.user?.id;
+    if (!userId) {
       return res.status(404).json({ error: 'Failed to get user ID' });
     }
-    const userId = userData.user.id;
 
     const apiUrl = `https://www.tikwm.com/api/user/following?unique_id=${encodeURIComponent(username)}&user_id=${userId}`;
     const response = await fetch(apiUrl, { timeout: 10000 });

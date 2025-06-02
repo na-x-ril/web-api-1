@@ -6,8 +6,9 @@ export default async function handler(req, res) {
 
   try {
     const finalUrl = await getDesktopUrl(url);
+    // Fetch video metadata langsung dari tikwm
     const videoResponse = await fetch(
-      `${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'http://localhost:3000'}/api/tt/v-get?url=${encodeURIComponent(finalUrl)}`
+      `https://www.tikwm.com/api/?url=${encodeURIComponent(finalUrl)}&hd=1`
     );
     const videoData = await videoResponse.json();
 
